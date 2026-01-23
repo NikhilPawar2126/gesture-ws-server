@@ -37,65 +37,81 @@
  ************************************************************/
 
 const express = require("express");
-const WebSocket = require("ws");
 const http = require("http");
+const WebSocket = require("ws");
 const cors = require("cors");
 const twilio = require("twilio");
 
 const app = express();
-app.use(express.json());
 app.use(cors());
+app.use(express.json());
 
-/* ================= TWILIO (FROM ENV) ================= */
-const accountSid = process.env.TWILIO_SID;
-const authToken  = process.env.TWILIO_TOKEN;
+/* ================= TWILIO CONFIG ================= */
 
-if (!accountSid || !authToken) {
-  console.error("❌ Twilio ENV vars missing");
-}
+// ⚠️ MOVE THESE TO RAILWAY VARIABLES LATER
+const accountSid = "AC6201e39c2e427a09fdc7f1e7b9c1b9e9";
+const authToken  = "2cbd62be7b900a889d6c3f488486e958";
+
+// ✅ YOUR ACTIVE TWILIO SMS NUMBER
+const TWILIO_NUMBER = "+17089192504";
 
 const client = twilio(accountSid, authToken);
 
-/* ================= BASIC ROUTE ================= */
+/* ================= HTTP ROUTES ================= */
+
 app.get("/", (req, res) => {
-  res.send("Glove Emergency Server Running");
+  res.send("🚀 Assistive Glove Server is Running");
 });
 
-/* ================= EMERGENCY ROUTE ================= */
+/* ===== SEND EMERGENCY SMS ===== */
 app.post("/send-emergency", async (req, res) => {
   const { phone, lat, lon } = req.body;
 
   if (!phone || !lat || !lon) {
-    return res.status(400).json({ success: false, error: "Missing data" });
+    return res.status(400).json({
+      success: false,
+      error: "Missing phone or location data"
+    });
   }
 
   const mapLink = `https://www.google.com/maps?q=${lat},${lon}`;
+  const body =
+`🚨 EMERGENCY ALERT 🚨
+I need immediate help!
+
+📍 Live Location:
+${mapLink}`;
 
   try {
-    const msg = await client.messages.create({
-      from: "whatsapp:+14155238886",          // Twilio sandbox number
-      to:   `whatsapp:+${phone}`,             // MUST have joined sandbox
-      body: `🚨 *EMERGENCY ALERT*\nI need help!\n📍 ${mapLink}`
+    const message = await client.messages.create({
+      from: TWILIO_NUMBER,
+      to: `+${phone}`,   // e.g. 919512419089
+      body
     });
 
-    console.log("✅ WhatsApp sent:", msg.sid);
+    console.log("✅ SMS SENT:", message.sid);
     res.json({ success: true });
 
   } catch (err) {
-    console.error("❌ Twilio Error:", err.message);
-    res.status(500).json({ success: false, error: err.message });
+    console.error("❌ TWILIO ERROR:", err.message);
+    res.status(500).json({
+      success: false,
+      error: err.message
+    });
   }
 });
 
 /* ================= WEBSOCKET ================= */
+
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 const clients = new Set();
 
-wss.on("connection", (ws) => {
+wss.on("connection", ws => {
   clients.add(ws);
+  console.log("🔌 WebSocket client connected");
 
-  ws.on("message", (msg) => {
+  ws.on("message", msg => {
     for (const c of clients) {
       if (c !== ws && c.readyState === WebSocket.OPEN) {
         c.send(msg.toString());
@@ -103,8 +119,13 @@ wss.on("connection", (ws) => {
     }
   });
 
-  ws.on("close", () => clients.delete(ws));
+  ws.on("close", () => {
+    clients.delete(ws);
+    console.log("❌ WebSocket client disconnected");
+  });
 });
+
+/* ================= START ================= */
 
 const PORT = process.env.PORT || 8080;
 server.listen(PORT, () => {
