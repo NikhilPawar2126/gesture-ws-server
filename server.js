@@ -33,59 +33,80 @@ const http = require("http");
 
 const app = express();
 app.use(express.json());
-app.use(cors()); // Fixes CORS errors for your Web App
+app.use(cors()); // Critical for browser communication
 
 const PORT = process.env.PORT || 8080;
 
-// --- EMERGENCY SMS ROUTE ---
+// 1. Health Check Route (Open this in your browser to test if server is live)
+app.get("/", (req, res) => {
+    res.send("Glove Server is Running! WebSocket and SMS routes are active.");
+});
+
+// 2. EMERGENCY SMS ROUTE
 app.post("/send-emergency", async (req, res) => {
     const { phone, lat, lon } = req.body;
     const API_KEY = "cd_np8_230126_lL_Xwz";
 
-    // ⚠️ IMPORTANT: CircuitDigest limits var1 and var2 to 30 characters each.
-    // We send coordinates directly so the link stays short.
-    const coordinates = `${lat.toFixed(4)},${lon.toFixed(4)}`;
+    // Shortening variables to stay under the 30-character limit
+    const coordinates = `${Number(lat).toFixed(4)},${Number(lon).toFixed(4)}`;
 
-    console.log(`[SMS Request] Target: ${phone}`);
+    console.log(`[SMS Request] Attempting to send to: ${phone}`);
 
     try {
-        const response = await axios.post('https://www.circuitdigest.cloud/send_sms?ID=101', {
-            "mobiles": phone,
-            "var1": "Glove Help",     // Max 30 chars
-            "var2": coordinates       // Max 30 chars (Shortened GPS)
-        }, {
-            headers: { 'Authorization': API_KEY }
+        // Explicitly defining the request to prevent 405/Method errors
+        const response = await axios({
+            method: 'post',
+            url: 'https://www.circuitdigest.cloud/send_sms',
+            params: { ID: '101' }, // Passes ?ID=101 correctly
+            data: {
+                "mobiles": phone,
+                "var1": "Glove Alert",
+                "var2": coordinates
+            },
+            headers: { 
+                'Authorization': API_KEY,
+                'Content-Type': 'application/json'
+            }
         });
         
         console.log("[SMS Success]", response.data);
         res.json({ success: true, data: response.data });
     } catch (error) {
-        // Detailed error logging to see the real issue in Railway logs
-        const errorMsg = error.response ? error.response.data : error.message;
-        console.error("[SMS Failed]", errorMsg);
-        res.status(500).json({ success: false, error: errorMsg });
+        // Capturing the actual error body from the response
+        const errorData = error.response ? error.response.data : error.message;
+        console.error("[SMS Failed]", errorData);
+        res.status(500).json({ success: false, error: errorData });
     }
 });
 
-// --- WEBSOCKET BROADCAST ---
+// 3. WEBSOCKET BROADCAST
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 const clients = new Set();
 
 wss.on("connection", ws => {
     clients.add(ws);
-    console.log("New connection established");
+    console.log("[WS] New connection established");
 
     ws.on("message", msg => {
         // Broadcast Flex Sensor & Button data to all clients
-        for (const client of clients) {
+        const messageStr = msg.toString();
+        clients.forEach(client => {
             if (client.readyState === WebSocket.OPEN) {
-                client.send(msg.toString());
+                client.send(messageStr);
             }
-        }
+        });
     });
 
+    ws.on("close", () => {
+        clients.delete(ws);
+        console.log("[WS] Client disconnected");
+    });
+});
+
+server.listen(PORT, () => console.log(`Server is running on port ${PORT}`));
     ws.on("close", () => clients.delete(ws));
 });
+
 
 server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
