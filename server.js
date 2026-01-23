@@ -24,7 +24,9 @@
 //     clients.delete(ws);
 //     console.log("Client disconnected");
 //   });
-// });const express = require("express");
+// });
+
+const express = require("express");
 const WebSocket = require("ws");
 const axios = require("axios");
 const cors = require("cors");
@@ -36,30 +38,30 @@ app.use(cors());
 
 const PORT = process.env.PORT || 8080;
 
-// 1. HEALTH CHECK
+// 1. HEALTH CHECK (Visit your Railway URL in a browser to see this)
 app.get("/", (req, res) => {
-    res.send("<h1>Glove Server Online</h1><p>SMS target: 9512419089</p>");
+    res.send("<h1>Glove Server is Online</h1><p>WebSocket and SMS API are active.</p>");
 });
 
-// 2. EMERGENCY SMS ROUTE (Hardcoded)
+// 2. EMERGENCY SMS ROUTE
 app.post("/send-emergency", async (req, res) => {
-    const { lat, lon } = req.body; // Browser only sends location now
+    const { phone, lat, lon } = req.body;
     const API_KEY = "cd_np8_230126_lL_Xwz";
-    const TARGET_NUMBER = "919512419089"; // Your friend's number with country code
 
-    // Truncate to 3 decimals to ensure we stay under the 30-character limit
-    const shortGPS = `${Number(lat).toFixed(3)},${Number(lon).toFixed(3)}`;
+    // 1. We make the coordinates EXTREMELY short to be safe.
+    const shortGPS = `${Number(lat).toFixed(2)},${Number(lon).toFixed(2)}`;
 
-    console.log(`[SMS] Sending alert to Friend: ${TARGET_NUMBER}`);
+    console.log(`[SMS Request] Target Number: ${phone}`);
 
     try {
+        // 2. We use the most basic Axios call to avoid 405/500 errors.
         const response = await axios({
             method: 'post',
             url: 'https://www.circuitdigest.cloud/send_sms?ID=101',
             data: {
-                "mobiles": TARGET_NUMBER,
-                "var1": "Glove Alert", 
-                "var2": shortGPS
+                "mobiles": phone,
+                "var1": "Glove",   // Shortest possible var1
+                "var2": shortGPS  // Shortest possible var2
             },
             headers: { 
                 'Authorization': API_KEY,
@@ -67,27 +69,28 @@ app.post("/send-emergency", async (req, res) => {
             }
         });
         
-        console.log("[SMS SUCCESS]", response.data);
-        res.json({ success: true });
+        console.log("[SMS Success]", response.data);
+        res.json({ success: true, data: response.data });
     } catch (error) {
+        // This will tell us EXACTLY why it failed in Railway Logs
         const errorData = error.response ? error.response.data : error.message;
-        console.error("[SMS FAILED]", errorData);
+        console.error("[SMS ERROR LOG]:", errorData);
         res.status(500).json({ success: false, error: errorData });
     }
 });
 
-// 3. WEBSOCKET BROADCAST (Does NOT affect sensor data)
+// 3. WEBSOCKET BROADCAST (For Finger Sensor Data)
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 const clients = new Set();
 
 wss.on("connection", (ws) => {
     clients.add(ws);
-    console.log("[WS] Client Connected");
+    console.log("[WS] Glove/Web App Connected");
 
     ws.on("message", (msg) => {
         const messageStr = msg.toString();
-        // This part handles your flex sensors - it remains untouched and fast!
+        // Broadcast to everyone EXCEPT the sender to save bandwidth
         clients.forEach((client) => {
             if (client !== ws && client.readyState === WebSocket.OPEN) {
                 client.send(messageStr);
@@ -95,7 +98,10 @@ wss.on("connection", (ws) => {
         });
     });
 
-    ws.on("close", () => clients.delete(ws));
+    ws.on("close", () => {
+        clients.delete(ws);
+        console.log("[WS] Connection Closed");
+    });
 });
 
 server.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
