@@ -35,34 +35,27 @@ const app = express();
 app.use(express.json());
 app.use(cors());
 
-// --- YOUR VERIFIED TWILIO KEYS ---
+// --- UPDATED CREDENTIALS ---
 const accountSid = 'AC6201e39c2e427a09fdc7f1e7b9c1b9e9'; 
-const authToken = '416a890d41f75f91457d195f591f83fa';   
-const client = new twilio(accountSid, authToken);
+const authToken = '416a890d41f75f91457d195f591f83fa'; // Triple check this matches your Twilio "Show Auth Token" button!
 
+const client = new twilio(accountSid, authToken);
 const PORT = process.env.PORT || 8080;
 
-app.get("/", (req, res) => {
-    res.send("<h1>Glove Server Live</h1><p>WhatsApp Sandbox is Ready.</p>");
-});
+app.get("/", (req, res) => res.send("Glove Server Live & Twilio Authenticated"));
 
-// --- AUTOMATIC WHATSAPP ROUTE ---
 app.post("/send-emergency", async (req, res) => {
     const { phone, lat, lon } = req.body;
-    
-    const twilioNumber = 'whatsapp:+14155238886'; 
-    const targetNumber = `whatsapp:+${phone}`; // Correctly formats the joined number
-
     const mapLink = `https://www.google.com/maps?q=${lat},${lon}`;
 
     try {
         const message = await client.messages.create({
-            from: twilioNumber,
-            body: `🚨 *EMERGENCY ALERT* 🚨\nThe glove user needs help!\n📍 Location: ${mapLink}`,
-            to: targetNumber
+            from: 'whatsapp:+14155238886',
+            to: `whatsapp:+${phone}`,
+            body: `🚨 GLOVE EMERGENCY alert!\nUser needs help.\nLocation: ${mapLink}`
         });
         
-        console.log("✅ WhatsApp sent! SID:", message.sid);
+        console.log("✅ Message Sent! SID:", message.sid);
         res.json({ success: true });
     } catch (error) {
         console.error("❌ Twilio Error:", error.message);
@@ -70,7 +63,7 @@ app.post("/send-emergency", async (req, res) => {
     }
 });
 
-// --- WEBSOCKET FOR SENSORS ---
+// --- WEBSOCKETS (FOR SENSORS) ---
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 const clients = new Set();
