@@ -25,7 +25,6 @@
 //     console.log("Client disconnected");
 //   });
 // });
-
 const express = require("express");
 const WebSocket = require("ws");
 const http = require("http");
@@ -36,29 +35,25 @@ const app = express();
 app.use(express.json());
 app.use(cors());
 
-// --- TWILIO CONFIGURATION ---
+// --- YOUR VERIFIED TWILIO KEYS ---
 const accountSid = 'AC6201e39c2e427a09fdc7f1e7b9c1b9e9'; 
 const authToken = '416a890d41f75f91457d195f591f83fa';   
 const client = new twilio(accountSid, authToken);
 
 const PORT = process.env.PORT || 8080;
 
-// Health Check for Railway
 app.get("/", (req, res) => {
-    res.send("<h1>Glove Server is Online</h1><p>Twilio WhatsApp & WebSockets Active.</p>");
+    res.send("<h1>Glove Server Live</h1><p>WhatsApp Sandbox is Ready.</p>");
 });
 
 // --- AUTOMATIC WHATSAPP ROUTE ---
 app.post("/send-emergency", async (req, res) => {
     const { phone, lat, lon } = req.body;
     
-    // Twilio Sandbox Number (Check your Twilio console to confirm this number)
     const twilioNumber = 'whatsapp:+14155238886'; 
-    const targetNumber = `whatsapp:+${phone}`; // Converts 919512419089 to whatsapp:+919512419089
+    const targetNumber = `whatsapp:+${phone}`; // Correctly formats the joined number
 
     const mapLink = `https://www.google.com/maps?q=${lat},${lon}`;
-
-    console.log(`[WhatsApp] Sending automatic alert to: ${targetNumber}`);
 
     try {
         const message = await client.messages.create({
@@ -67,37 +62,28 @@ app.post("/send-emergency", async (req, res) => {
             to: targetNumber
         });
         
-        console.log("[Twilio Success] Message SID:", message.sid);
-        res.json({ success: true, sid: message.sid });
+        console.log("✅ WhatsApp sent! SID:", message.sid);
+        res.json({ success: true });
     } catch (error) {
-        console.error("[Twilio Failed]", error.message);
+        console.error("❌ Twilio Error:", error.message);
         res.status(500).json({ success: false, error: error.message });
     }
 });
 
-// --- WEBSOCKET BROADCAST (For Finger Sensors) ---
+// --- WEBSOCKET FOR SENSORS ---
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 const clients = new Set();
 
 wss.on("connection", (ws) => {
     clients.add(ws);
-    console.log("[WS] New client connected (Glove/App)");
-
     ws.on("message", (msg) => {
         const messageStr = msg.toString();
-        // Broadcast to all connected web dashboards
-        clients.forEach(client => {
-            if (client !== ws && client.readyState === WebSocket.OPEN) {
-                client.send(messageStr);
-            }
+        clients.forEach(c => {
+            if (c !== ws && c.readyState === WebSocket.OPEN) c.send(messageStr);
         });
     });
-
-    ws.on("close", () => {
-        clients.delete(ws);
-        console.log("[WS] Client disconnected");
-    });
+    ws.on("close", () => clients.delete(ws));
 });
 
 server.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
